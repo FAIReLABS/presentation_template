@@ -25,3 +25,6 @@ slides > slide:not(.nobackground) {
   background-size: cover !important;
   background-position: center !important;
 }
+
+/* define forced column break */ 
+.forceBreak { -webkit-column-break-after: always; break-after: column; }
