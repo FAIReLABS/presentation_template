@@ -2,48 +2,52 @@
 
 on:
   push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  release:
-    types: [published]
-  workflow_dispatch:
+    paths: ['**.Rmd']
 
-name: presentation
+name: render-presentation
 
 jobs:
-  presentation:
+  render-presentation:
     runs-on: ubuntu-latest
-    # Only restrict concurrency for non-PR jobs
-    concurrency:
-      group: pkgdown-${{ github.event_name != 'pull_request' || github.run_id }}
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      RENV_PATHS_ROOT: ~/.local/share/renv
       
-     steps:
+    steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - uses: r-lib/actions/setup-pandoc@v2
 
       - uses: r-lib/actions/setup-r@v2
         with:
-          use-public-rspm: true
+          use-public-rspm: false
 
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - name: Cache packages
+        uses: actions/cache@v1
         with:
-          extra-packages: any::rmarkdown
-          needs: website
-          
-      - name: Build presentation
+          path: ${{ env.RENV_PATHS_ROOT }}
+          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-renv-
+
+      - name: Restore packages
         shell: Rscript {0}
         run: |
-          dir.create("docs")
-          rmarkdown::render("slides.Rmd", output_file = "index.html", output_dir = "docs")
-
+          if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv", repos = "https://cloud.r-project.org")
+          options(renv.config.repos.override = 'https://cloud.r-project.org')
+          renv::restore(repos = "https://cloud.r-project.org")
+        
+      - name: Build presentation
+        run: |
+          RMD_PATH=($(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '[.]Rmd$'))
+          Rscript -e 'for (f in commandArgs(TRUE)) if (file.exists(f)) rmarkdown::render(f, output_file = "index.html")' ${RMD_PATH[*]}
+  
       - name: Deploy to GitHub pages 🚀
         if: github.event_name != 'pull_request'
         uses: JamesIves/github-pages-deploy-action@4.1.4
         with:
           clean: false
           branch: gh-pages
-          folder: docs
+          folder: .
